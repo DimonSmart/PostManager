@@ -1,0 +1,142 @@
+﻿@page "/campaigns/{CampaignId:guid}"
+@inject CampaignService CampaignService
+@inject TargetService TargetService
+@inject TenantState TenantState
+@inject CampaignScheduler CampaignScheduler
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Edit campaign</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <MudAlert Severity="Severity.Info">Select a tenant to manage campaigns.</MudAlert>
+}
+else if (IsLoading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (IsMissing)
+{
+    <MudAlert Severity="Severity.Warning">Campaign not found.</MudAlert>
+}
+else
+{
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.h4">Edit campaign</MudText>
+        <MudPaper Class="pa-4">
+            <EditForm Model="Model" OnValidSubmit="SaveCampaign">
+                <CampaignForm Model="Model" Targets="TargetList" SelectedTargetIds="SelectedTargetIds" />
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit">Save</MudButton>
+                    <MudButton Color="Color.Secondary" Variant="Variant.Text" OnClick="Cancel" ButtonType="ButtonType.Button">Cancel</MudButton>
+                </MudStack>
+            </EditForm>
+        </MudPaper>
+    </MudStack>
+}
+
+@code {
+    [Parameter] public Guid CampaignId { get; set; }
+
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private bool IsLoading { get; set; } = true;
+    private bool IsMissing { get; set; }
+    private CampaignFormModel Model { get; set; } = new();
+    private List<Target> TargetList { get; set; } = new();
+    private List<Guid> SelectedTargetIds { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        TargetList = await TargetService.GetTargetsAsync(TenantState.TenantId!, CancellationToken.None);
+        var campaign = await CampaignService.GetCampaignAsync(TenantState.TenantId!, CampaignId, CancellationToken.None);
+        if (campaign == null)
+        {
+            IsMissing = true;
+            IsLoading = false;
+            return;
+        }
+
+        Model = new CampaignFormModel
+        {
+            Name = campaign.Name,
+            Description = campaign.Description,
+            RequiresModeration = campaign.RequiresModeration,
+            TextVariantsPerPost = campaign.TextVariantsPerPost,
+            TextPrompt = campaign.TextPrompt,
+            TextEditorRulesPrompt = campaign.TextEditorRulesPrompt,
+            TextLlmProvider = campaign.TextLlmProvider,
+            TextLlmModel = campaign.TextLlmModel,
+            TextLlmTemperature = campaign.TextLlmTemperature,
+            TextLlmMaxTokens = campaign.TextLlmMaxTokens,
+            ImageVariantsPerPost = campaign.ImageVariantsPerPost,
+            ImageProvider = campaign.ImageProvider,
+            ImagePositivePrompt = campaign.ImagePositivePrompt,
+            ImageNegativePrompt = campaign.ImageNegativePrompt,
+            ImageOptions = campaign.ImageOptions,
+            ScheduleCron = campaign.ScheduleCron,
+            ScheduleTimezone = campaign.ScheduleTimezone,
+            MissedCatchUpWithinMinutes = campaign.MissedCatchUpWithinMinutes,
+            MissedIfMissedLongerThanMinutes = campaign.MissedIfMissedLongerThanMinutes
+        };
+
+        SelectedTargetIds = campaign.CampaignTargets.Select(link => link.TargetId).ToList();
+        IsLoading = false;
+    }
+
+    private async Task SaveCampaign()
+    {
+        if (string.IsNullOrWhiteSpace(Model.Name))
+        {
+            Snackbar.Add("Campaign name is required.", Severity.Warning);
+            return;
+        }
+
+        if (SelectedTargetIds.Count == 0)
+        {
+            Snackbar.Add("Select at least one target.", Severity.Warning);
+            return;
+        }
+
+        var campaign = new Campaign
+        {
+            Id = CampaignId,
+            TenantId = TenantState.TenantId!,
+            Name = Model.Name.Trim(),
+            Description = Model.Description,
+            RequiresModeration = Model.RequiresModeration,
+            TextVariantsPerPost = Math.Max(1, Model.TextVariantsPerPost),
+            TextPrompt = Model.TextPrompt,
+            TextEditorRulesPrompt = Model.TextEditorRulesPrompt,
+            TextLlmProvider = Model.TextLlmProvider,
+            TextLlmModel = Model.TextLlmModel,
+            TextLlmTemperature = Model.TextLlmTemperature,
+            TextLlmMaxTokens = Math.Max(1, Model.TextLlmMaxTokens),
+            ImageVariantsPerPost = Math.Max(1, Model.ImageVariantsPerPost),
+            ImageProvider = Model.ImageProvider,
+            ImagePositivePrompt = Model.ImagePositivePrompt,
+            ImageNegativePrompt = Model.ImageNegativePrompt,
+            ImageOptions = Model.ImageOptions,
+            ScheduleCron = Model.ScheduleCron,
+            ScheduleTimezone = Model.ScheduleTimezone,
+            MissedCatchUpWithinMinutes = Math.Max(0, Model.MissedCatchUpWithinMinutes),
+            MissedIfMissedLongerThanMinutes = Model.MissedIfMissedLongerThanMinutes
+        };
+
+        await CampaignService.UpdateCampaignAsync(TenantState.TenantId!, campaign, SelectedTargetIds, CancellationToken.None);
+        await CampaignScheduler.ScheduleCampaignAsync(campaign, CancellationToken.None);
+
+        Navigation.NavigateTo($"/campaigns?selectedId={CampaignId}");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/campaigns");
+    }
+}

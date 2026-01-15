@@ -70,6 +70,18 @@ public sealed class TenantService
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task DeleteTenantAsync(string tenantId, CancellationToken ct)
+    {
+        var tenant = await _db.Tenants.FirstOrDefaultAsync(entry => entry.Id == tenantId, ct);
+        if (tenant == null)
+        {
+            return;
+        }
+
+        _db.Tenants.Remove(tenant);
+        await _db.SaveChangesAsync(ct);
+    }
+
     private static string Slugify(string input)
     {
         var lower = input.ToLowerInvariant();

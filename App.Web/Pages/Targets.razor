@@ -1,87 +1,85 @@
 ﻿@page "/targets"
+@using Microsoft.AspNetCore.WebUtilities
 @inject TargetService TargetService
+@inject PublishService PublishService
 @inject TenantState TenantState
 @inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Targets</PageTitle>
 
 @if (!IsTenantSelected)
 {
-    <div class="alert alert-info">Select a tenant to manage targets.</div>
+    <MudAlert Severity="Severity.Info">Select a tenant to manage targets.</MudAlert>
 }
 else
 {
-    <h1>Targets</h1>
+    <MudStack Spacing="2">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.h4">Targets</MudText>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" Href="/targets/new">
+                Create
+            </MudButton>
+        </MudStack>
 
-    <div class="row">
-        <div class="col-md-6">
-            <h4>Existing targets</h4>
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                        <th></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var target in TargetList)
-                    {
-                        <tr>
-                            <td>@target.DisplayName</td>
-                            <td>@target.Type</td>
-                            <td>@(target.HasError ? "Error" : "OK")</td>
-                            <td>
-                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditTarget(target)">Edit</button>
-                                @if (target.HasError)
-                                {
-                                    <button class="btn btn-sm btn-outline-warning ms-2" @onclick="() => ResetError(target)">Reset error</button>
-                                }
-                            </td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </div>
-        <div class="col-md-6">
-            <h4>@(IsEditing ? "Edit target" : "Create target")</h4>
-            <EditForm Model="this" OnValidSubmit="SaveTarget">
-                <div class="mb-3">
-                    <label class="form-label">Display name</label>
-                    <InputText class="form-control" @bind-Value="TargetDisplayName" />
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Type</label>
-                    <InputSelect class="form-select" @bind-Value="TargetType">
-                        @foreach (var type in Enum.GetValues<TargetType>())
+        <MudPaper Class="pa-4">
+            <MudTable Items="TargetList" Hover="true" Dense="true" Bordered="true" RowClassFunc="RowClassFunc">
+                <HeaderContent>
+                    <MudTh>Name</MudTh>
+                    <MudTh>Type</MudTh>
+                    <MudTh>Status</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate Context="target">
+                    <MudTd DataLabel="Name">@target.DisplayName</MudTd>
+                    <MudTd DataLabel="Type">@target.Type</MudTd>
+                    <MudTd DataLabel="Status">@(target.HasError ? "Error" : "OK")</MudTd>
+                    <MudTd>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => EditTarget(target.Id)">Edit</MudButton>
+                        @if (target.Type == TargetType.TelegramChannel)
                         {
-                            <option value="@type">@type</option>
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Class="ms-2"
+                                       Disabled="@IsTesting(target.Id)"
+                                       OnClick="() => TestTarget(target)">
+                                @if (IsTesting(target.Id))
+                                {
+                                    <MudProgressCircular Indeterminate="true" Size="Size.Small" Class="me-2" />
+                                }
+                                Test
+                            </MudButton>
                         }
-                    </InputSelect>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Settings JSON</label>
-                    <InputTextArea class="form-control" @bind-Value="TargetSettingsJson" rows="6" />
-                </div>
-                <button class="btn btn-success" type="submit">@(IsEditing ? "Save" : "Create")</button>
-                @if (IsEditing)
-                {
-                    <button class="btn btn-secondary ms-2" type="button" @onclick="ClearForm">Cancel</button>
-                }
-            </EditForm>
-        </div>
-    </div>
+                        <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error" Class="ms-2" OnClick="() => ConfirmDelete(target)">Delete</MudButton>
+                        @if (target.HasError)
+                        {
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Warning" Class="ms-2" OnClick="() => ResetError(target)">Reset error</MudButton>
+                        }
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No targets yet.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        </MudPaper>
+    </MudStack>
 }
 
 @code {
     private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
     private List<Target> TargetList { get; set; } = new();
-    private Guid? EditingTargetId { get; set; }
-    private string TargetDisplayName { get; set; } = string.Empty;
-    private TargetType TargetType { get; set; } = TargetType.TelegramChannel;
-    private string? TargetSettingsJson { get; set; }
-    private bool IsEditing => EditingTargetId.HasValue;
+    private Guid? SelectedTargetId { get; set; }
+    private bool HasScrolled { get; set; }
+    private bool SnackbarShown { get; set; }
+    private bool ShouldScroll { get; set; }
+    private HashSet<Guid> TestingTargetIds { get; } = new();
+
+    protected override void OnParametersSet()
+    {
+        ReadSelectedIdFromQuery();
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,50 +92,124 @@ else
         await LoadTargets();
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ShouldScroll && !HasScrolled)
+        {
+            HasScrolled = true;
+            await JSRuntime.InvokeVoidAsync("postManager.scrollToSelector", ".pm-selected-row");
+        }
+    }
+
     private async Task LoadTargets()
     {
         TargetList = await TargetService.GetTargetsAsync(TenantState.TenantId!, CancellationToken.None);
+        UpdateSelectedRow();
     }
 
-    private void EditTarget(Target target)
+    private void ReadSelectedIdFromQuery()
     {
-        EditingTargetId = target.Id;
-        TargetDisplayName = target.DisplayName;
-        TargetType = target.Type;
-        TargetSettingsJson = target.SettingsJson;
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("selectedId", out var values) && Guid.TryParse(values.FirstOrDefault(), out var id))
+        {
+            if (SelectedTargetId != id)
+            {
+                HasScrolled = false;
+                SnackbarShown = false;
+            }
+
+            SelectedTargetId = id;
+        }
+        else
+        {
+            SelectedTargetId = null;
+            ShouldScroll = false;
+        }
     }
 
-    private async Task SaveTarget()
+    private void UpdateSelectedRow()
     {
-        if (string.IsNullOrWhiteSpace(TargetDisplayName))
+        if (!SelectedTargetId.HasValue)
+        {
+            ShouldScroll = false;
+            return;
+        }
+
+        var match = TargetList.FirstOrDefault(target => target.Id == SelectedTargetId.Value);
+        if (match == null)
+        {
+            ShouldScroll = false;
+            return;
+        }
+
+        ShouldScroll = true;
+        if (!SnackbarShown)
+        {
+            SnackbarShown = true;
+            Snackbar.Add("Created", Severity.Success);
+        }
+    }
+
+    private string RowClassFunc(Target target, int rowNumber)
+    {
+        return SelectedTargetId.HasValue && target.Id == SelectedTargetId.Value
+            ? "pm-selected-row"
+            : string.Empty;
+    }
+
+    private void EditTarget(Guid targetId)
+    {
+        Navigation.NavigateTo($"/targets/{targetId}");
+    }
+
+    private async Task ConfirmDelete(Target target)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete target",
+            $"Delete '{target.DisplayName}'?",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed != true)
         {
             return;
         }
 
-        if (EditingTargetId.HasValue)
-        {
-            await TargetService.UpdateTargetAsync(TenantState.TenantId!, EditingTargetId.Value, TargetType, TargetDisplayName, TargetSettingsJson, CancellationToken.None);
-        }
-        else
-        {
-            await TargetService.AddTargetAsync(TenantState.TenantId!, TargetType, TargetDisplayName, TargetSettingsJson, CancellationToken.None);
-        }
-
-        ClearForm();
+        await TargetService.DeleteTargetAsync(TenantState.TenantId!, target.Id, CancellationToken.None);
+        Snackbar.Add("Deleted", Severity.Success);
         await LoadTargets();
     }
 
     private async Task ResetError(Target target)
     {
         await TargetService.ResetErrorAsync(TenantState.TenantId!, target.Id, CancellationToken.None);
+        Snackbar.Add("Error reset", Severity.Success);
         await LoadTargets();
     }
 
-    private void ClearForm()
+    private bool IsTesting(Guid targetId) => TestingTargetIds.Contains(targetId);
+
+    private async Task TestTarget(Target target)
     {
-        EditingTargetId = null;
-        TargetDisplayName = string.Empty;
-        TargetType = TargetType.TelegramChannel;
-        TargetSettingsJson = null;
+        if (TestingTargetIds.Contains(target.Id))
+        {
+            return;
+        }
+
+        TestingTargetIds.Add(target.Id);
+        try
+        {
+            await PublishService.TestTargetAsync(TenantState.TenantId!, target.Id, CancellationToken.None);
+            Snackbar.Add("Тестовое сообщение отправлено успешно", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка отправки: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            TestingTargetIds.Remove(target.Id);
+        }
     }
 }

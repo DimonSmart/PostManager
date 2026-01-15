@@ -121,6 +121,18 @@ public sealed class CampaignService
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task DeleteCampaignAsync(string tenantId, Guid campaignId, CancellationToken ct)
+    {
+        var campaign = await _db.Campaigns.FirstOrDefaultAsync(entry => entry.Id == campaignId && entry.TenantId == tenantId, ct);
+        if (campaign == null)
+        {
+            return;
+        }
+
+        _db.Campaigns.Remove(campaign);
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task AddItemsAsync(string tenantId, Guid campaignId, string rawItems, CancellationToken ct)
     {
         var campaign = await _db.Campaigns.FirstOrDefaultAsync(entry => entry.Id == campaignId && entry.TenantId == tenantId, ct);

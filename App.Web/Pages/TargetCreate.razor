@@ -1,0 +1,69 @@
+﻿@page "/targets/new"
+@inject TargetService TargetService
+@inject TenantState TenantState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>New target</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <MudAlert Severity="Severity.Info">Select a tenant to manage targets.</MudAlert>
+}
+else
+{
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.h4">Create target</MudText>
+        <MudPaper Class="pa-4">
+            <EditForm Model="Model" OnValidSubmit="CreateTarget">
+                <TargetForm Model="Model" />
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit">Create</MudButton>
+                    <MudButton Color="Color.Secondary" Variant="Variant.Text" ButtonType="ButtonType.Button" OnClick="Cancel">Cancel</MudButton>
+                </MudStack>
+            </EditForm>
+        </MudPaper>
+    </MudStack>
+}
+
+@code {
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private TargetFormModel Model { get; set; } = new();
+
+    protected override Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+        }
+        else if (Model.TargetType == TargetType.TelegramChannel && string.IsNullOrWhiteSpace(Model.SettingsJson))
+        {
+            Model.SettingsJson = TargetSettingsJsonTemplates.TelegramChannelTemplate;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task CreateTarget()
+    {
+        if (string.IsNullOrWhiteSpace(Model.DisplayName))
+        {
+            Snackbar.Add("Target display name is required.", Severity.Warning);
+            return;
+        }
+
+        var target = await TargetService.AddTargetAsync(
+            TenantState.TenantId!,
+            Model.TargetType,
+            Model.DisplayName,
+            Model.SettingsJson,
+            CancellationToken.None);
+
+        Navigation.NavigateTo($"/targets?selectedId={target.Id}");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/targets");
+    }
+}

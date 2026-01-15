@@ -1,0 +1,94 @@
+﻿@page "/targets/{TargetId:guid}"
+@inject TargetService TargetService
+@inject TenantState TenantState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Edit target</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <MudAlert Severity="Severity.Info">Select a tenant to manage targets.</MudAlert>
+}
+else if (IsLoading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (IsMissing)
+{
+    <MudAlert Severity="Severity.Warning">Target not found.</MudAlert>
+}
+else
+{
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.h4">Edit target</MudText>
+        <MudPaper Class="pa-4">
+            <EditForm Model="Model" OnValidSubmit="SaveTarget">
+                <TargetForm Model="Model" />
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit">Save</MudButton>
+                    <MudButton Color="Color.Secondary" Variant="Variant.Text" ButtonType="ButtonType.Button" OnClick="Cancel">Cancel</MudButton>
+                </MudStack>
+            </EditForm>
+        </MudPaper>
+    </MudStack>
+}
+
+@code {
+    [Parameter] public Guid TargetId { get; set; }
+
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private bool IsLoading { get; set; } = true;
+    private bool IsMissing { get; set; }
+    private TargetFormModel Model { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        var target = await TargetService.GetTargetAsync(TenantState.TenantId!, TargetId, CancellationToken.None);
+        if (target == null)
+        {
+            IsMissing = true;
+            IsLoading = false;
+            return;
+        }
+
+        Model = new TargetFormModel
+        {
+            DisplayName = target.DisplayName,
+            TargetType = target.Type,
+            SettingsJson = target.SettingsJson
+        };
+
+        IsLoading = false;
+    }
+
+    private async Task SaveTarget()
+    {
+        if (string.IsNullOrWhiteSpace(Model.DisplayName))
+        {
+            Snackbar.Add("Target display name is required.", Severity.Warning);
+            return;
+        }
+
+        await TargetService.UpdateTargetAsync(
+            TenantState.TenantId!,
+            TargetId,
+            Model.TargetType,
+            Model.DisplayName,
+            Model.SettingsJson,
+            CancellationToken.None);
+
+        Navigation.NavigateTo($"/targets?selectedId={TargetId}");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/targets");
+    }
+}

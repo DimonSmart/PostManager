@@ -1,115 +1,165 @@
 ﻿@page "/tenants"
+@using Microsoft.AspNetCore.WebUtilities
 @inject TenantService TenantService
 @inject TenantState TenantState
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Tenants</PageTitle>
 
-<h1>Tenants</h1>
+<MudStack Spacing="2">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+        <MudText Typo="Typo.h4">Tenants</MudText>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Add" Href="/tenants/new">
+            Create
+        </MudButton>
+    </MudStack>
 
-<div class="row">
-    <div class="col-md-6">
-        <h4>Existing tenants</h4>
-        <table class="table table-sm">
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Id</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var tenant in TenantList)
-                {
-                    <tr>
-                        <td>@tenant.Name</td>
-                        <td>@tenant.Id</td>
-                        <td>
-                            <button class="btn btn-sm btn-primary" @onclick="() => SelectTenant(tenant)">Select</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-    <div class="col-md-6">
-        <h4>Create tenant</h4>
-        <EditForm Model="this" OnValidSubmit="CreateTenant">
-            <div class="mb-3">
-                <label class="form-label">Name</label>
-                <InputText class="form-control" @bind-Value="NewTenantName" />
-            </div>
-            <div class="mb-3">
-                <label class="form-label">Settings JSON (optional)</label>
-                <InputTextArea class="form-control" @bind-Value="NewTenantSettingsJson" rows="4" />
-                <div class="form-text">Store env var names for secrets here.</div>
-            </div>
-            <button class="btn btn-success" type="submit">Create</button>
-        </EditForm>
-
-        @if (SelectedTenant != null)
-        {
-            <hr />
-            <h5>Edit settings for @SelectedTenant.Name</h5>
-            <EditForm Model="this" OnValidSubmit="SaveSettings">
-                <InputTextArea class="form-control" @bind-Value="SelectedTenantSettingsJson" rows="6" />
-                <button class="btn btn-primary mt-2" type="submit">Save settings</button>
-            </EditForm>
-        }
-    </div>
-</div>
+    <MudPaper Class="pa-4">
+        <MudTable Items="TenantList" Hover="true" Dense="true" Bordered="true" RowClassFunc="RowClassFunc">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Id</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate Context="tenant">
+                <MudTd DataLabel="Name">@tenant.Name</MudTd>
+                <MudTd DataLabel="Id">@tenant.Id</MudTd>
+                <MudTd>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="() => SelectTenant(tenant)">Select</MudButton>
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Class="ms-2" OnClick="() => EditTenant(tenant.Id)">Edit</MudButton>
+                    <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Error" Class="ms-2" OnClick="() => ConfirmDelete(tenant)">Delete</MudButton>
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>No tenants yet.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+</MudStack>
 
 @code {
     private List<Tenant> TenantList { get; set; } = new();
-    private string NewTenantName { get; set; } = string.Empty;
-    private string? NewTenantSettingsJson { get; set; }
-    private Tenant? SelectedTenant { get; set; }
-    private string? SelectedTenantSettingsJson { get; set; }
+    private string? SelectedTenantId { get; set; }
+    private bool HasScrolled { get; set; }
+    private bool SnackbarShown { get; set; }
+    private bool ShouldScroll { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        ReadSelectedIdFromQuery();
+    }
 
     protected override async Task OnInitializedAsync()
     {
         await LoadTenants();
+    }
 
-        if (!string.IsNullOrWhiteSpace(TenantState.TenantId))
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ShouldScroll && !HasScrolled)
         {
-            SelectedTenant = TenantList.FirstOrDefault(tenant => tenant.Id == TenantState.TenantId);
-            SelectedTenantSettingsJson = SelectedTenant?.SettingsJson;
+            HasScrolled = true;
+            await JSRuntime.InvokeVoidAsync("postManager.scrollToSelector", ".pm-selected-row");
         }
     }
 
     private async Task LoadTenants()
     {
         TenantList = await TenantService.GetTenantsAsync(CancellationToken.None);
+        UpdateSelectedRow();
+    }
+
+    private void ReadSelectedIdFromQuery()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.TryGetValue("selectedId", out var values))
+        {
+            var value = values.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (!string.Equals(SelectedTenantId, value, StringComparison.Ordinal))
+                {
+                    HasScrolled = false;
+                    SnackbarShown = false;
+                }
+
+                SelectedTenantId = value;
+                return;
+            }
+        }
+
+        SelectedTenantId = null;
+        ShouldScroll = false;
+    }
+
+    private void UpdateSelectedRow()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedTenantId))
+        {
+            ShouldScroll = false;
+            return;
+        }
+
+        var match = TenantList.FirstOrDefault(tenant => tenant.Id == SelectedTenantId);
+        if (match == null)
+        {
+            ShouldScroll = false;
+            return;
+        }
+
+        ShouldScroll = true;
+        if (!SnackbarShown)
+        {
+            SnackbarShown = true;
+            Snackbar.Add("Created", Severity.Success);
+        }
+    }
+
+    private string RowClassFunc(Tenant tenant, int rowNumber)
+    {
+        if (!string.IsNullOrWhiteSpace(SelectedTenantId))
+        {
+            return tenant.Id == SelectedTenantId ? "pm-selected-row" : string.Empty;
+        }
+
+        return tenant.Id == TenantState.TenantId ? "pm-selected-row" : string.Empty;
     }
 
     private void SelectTenant(Tenant tenant)
     {
         TenantState.SetTenant(tenant.Id, tenant.Name);
-        SelectedTenant = tenant;
-        SelectedTenantSettingsJson = tenant.SettingsJson;
+        Snackbar.Add($"Tenant selected: {tenant.Name}", Severity.Info);
     }
 
-    private async Task CreateTenant()
+    private void EditTenant(string tenantId)
     {
-        if (string.IsNullOrWhiteSpace(NewTenantName))
+        Navigation.NavigateTo($"/tenants/{tenantId}");
+    }
+
+    private async Task ConfirmDelete(Tenant tenant)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Delete tenant",
+            $"Delete '{tenant.Name}'? This removes all tenant data.",
+            yesText: "Delete",
+            cancelText: "Cancel");
+
+        if (confirmed != true)
         {
             return;
         }
 
-        var tenant = await TenantService.CreateTenantAsync(NewTenantName, NewTenantSettingsJson, CancellationToken.None);
-        TenantState.SetTenant(tenant.Id, tenant.Name);
-        NewTenantName = string.Empty;
-        NewTenantSettingsJson = null;
-        await LoadTenants();
-    }
-
-    private async Task SaveSettings()
-    {
-        if (SelectedTenant == null)
+        await TenantService.DeleteTenantAsync(tenant.Id, CancellationToken.None);
+        if (TenantState.TenantId == tenant.Id)
         {
-            return;
+            TenantState.Clear();
         }
 
-        await TenantService.UpdateSettingsAsync(SelectedTenant.Id, SelectedTenantSettingsJson, CancellationToken.None);
+        Snackbar.Add("Deleted", Severity.Success);
         await LoadTenants();
     }
 }

@@ -9,6 +9,11 @@ public sealed class TelegramPublishAdapter : IPublishAdapter
 {
     private readonly HttpClient _httpClient;
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     public TelegramPublishAdapter(HttpClient httpClient)
     {
         _httpClient = httpClient;
@@ -32,10 +37,15 @@ public sealed class TelegramPublishAdapter : IPublishAdapter
 
         if (string.IsNullOrWhiteSpace(request.ImagePath))
         {
-            return await SendMessageAsync(token, settings.ChatId, request.Text, ct);
+            return await SendMessageAsync(token, settings, request.Text, ct);
         }
 
-        return await SendPhotoAsync(token, settings.ChatId, request.Text, request.ImagePath, ct);
+        return await SendPhotoAsync(token, settings, request.Text, request.ImagePath, ct);
+    }
+
+    private sealed class TelegramSettingsEnvelope
+    {
+        public TelegramTargetSettings? Telegram { get; set; }
     }
 
     private static TelegramTargetSettings ParseSettings(string? settingsJson)
@@ -47,8 +57,13 @@ public sealed class TelegramPublishAdapter : IPublishAdapter
 
         try
         {
-            return JsonSerializer.Deserialize<TelegramTargetSettings>(settingsJson,
-                       new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+            var envelope = JsonSerializer.Deserialize<TelegramSettingsEnvelope>(settingsJson, JsonOptions);
+            if (envelope?.Telegram is not null)
+            {
+                return envelope.Telegram;
+            }
+
+            return JsonSerializer.Deserialize<TelegramTargetSettings>(settingsJson, JsonOptions)
                    ?? new TelegramTargetSettings();
         }
         catch
@@ -72,13 +87,16 @@ public sealed class TelegramPublishAdapter : IPublishAdapter
         return null;
     }
 
-    private async Task<PublishResult> SendMessageAsync(string token, string chatId, string text, CancellationToken ct)
+    private async Task<PublishResult> SendMessageAsync(string token, TelegramTargetSettings settings, string text, CancellationToken ct)
     {
         var url = $"https://api.telegram.org/bot{token}/sendMessage";
-        var payload = new Dictionary<string, string>
+        var payload = new Dictionary<string, object?>
         {
-            ["chat_id"] = chatId,
-            ["text"] = text
+            ["chat_id"] = settings.ChatId,
+            ["text"] = text,
+            ["disable_web_page_preview"] = settings.DisableWebPagePreview,
+            ["disable_notification"] = settings.DisableNotification,
+            ["protect_content"] = settings.ProtectContent
         };
 
         using var response = await _httpClient.PostAsJsonAsync(url, payload, ct);
@@ -91,12 +109,22 @@ public sealed class TelegramPublishAdapter : IPublishAdapter
         return new PublishResult(ExtractMessageId(content));
     }
 
-    private async Task<PublishResult> SendPhotoAsync(string token, string chatId, string caption, string imagePath, CancellationToken ct)
+    private async Task<PublishResult> SendPhotoAsync(string token, TelegramTargetSettings settings, string caption, string imagePath, CancellationToken ct)
     {
         var url = $"https://api.telegram.org/bot{token}/sendPhoto";
         using var content = new MultipartFormDataContent();
-        content.Add(new StringContent(chatId), "chat_id");
+        content.Add(new StringContent(settings.ChatId!), "chat_id");
         content.Add(new StringContent(caption), "caption");
+
+        if (settings.DisableNotification)
+        {
+            content.Add(new StringContent("true"), "disable_notification");
+        }
+
+        if (settings.ProtectContent)
+        {
+            content.Add(new StringContent("true"), "protect_content");
+        }
 
         await using var fileStream = File.OpenRead(imagePath);
         content.Add(new StreamContent(fileStream), "photo", Path.GetFileName(imagePath));

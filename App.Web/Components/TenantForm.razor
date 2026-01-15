@@ -1,0 +1,10 @@
+﻿<MudStack Spacing="3">
+    <MudTextField Label="Name" @bind-Value="Model.Name" Disabled="IsNameReadOnly" Required="true" Immediate="true" />
+    <MudTextField Label="Settings JSON" @bind-Value="Model.SettingsJson" Lines="6" />
+    <MudText Typo="Typo.caption">Store env var names for secrets here.</MudText>
+</MudStack>
+
+@code {
+    [Parameter] public TenantFormModel Model { get; set; } = new();
+    [Parameter] public bool IsNameReadOnly { get; set; }
+}

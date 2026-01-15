@@ -1,0 +1,75 @@
+﻿@page "/tenants/{TenantId}"
+@inject TenantService TenantService
+@inject TenantState TenantState
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>Edit tenant</PageTitle>
+
+@if (IsLoading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (IsMissing)
+{
+    <MudAlert Severity="Severity.Warning">Tenant not found.</MudAlert>
+}
+else
+{
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.h4">Edit tenant settings</MudText>
+        <MudPaper Class="pa-4">
+            <EditForm Model="Model" OnValidSubmit="SaveTenant">
+                <TenantForm Model="Model" IsNameReadOnly="true" />
+                <MudStack Row="true" Spacing="2" Class="mt-4">
+                    <MudButton Color="Color.Primary" Variant="Variant.Filled" ButtonType="ButtonType.Submit">Save</MudButton>
+                    <MudButton Color="Color.Secondary" Variant="Variant.Text" ButtonType="ButtonType.Button" OnClick="Cancel">Cancel</MudButton>
+                </MudStack>
+            </EditForm>
+        </MudPaper>
+    </MudStack>
+}
+
+@code {
+    [Parameter] public string TenantId { get; set; } = string.Empty;
+
+    private bool IsLoading { get; set; } = true;
+    private bool IsMissing { get; set; }
+    private TenantFormModel Model { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tenant = await TenantService.GetTenantAsync(TenantId, CancellationToken.None);
+        if (tenant == null)
+        {
+            IsMissing = true;
+            IsLoading = false;
+            return;
+        }
+
+        Model = new TenantFormModel
+        {
+            Name = tenant.Name,
+            SettingsJson = tenant.SettingsJson
+        };
+
+        IsLoading = false;
+    }
+
+    private async Task SaveTenant()
+    {
+        await TenantService.UpdateSettingsAsync(TenantId, Model.SettingsJson, CancellationToken.None);
+        if (TenantState.TenantId == TenantId)
+        {
+            TenantState.SetTenant(TenantId, Model.Name);
+        }
+
+        Snackbar.Add("Settings saved", Severity.Success);
+        Navigation.NavigateTo($"/tenants?selectedId={TenantId}");
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/tenants");
+    }
+}

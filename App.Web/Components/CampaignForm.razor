@@ -1,0 +1,123 @@
+﻿<MudStack Spacing="3">
+    <MudTextField Label="Name" @bind-Value="Model.Name" Required="true" Immediate="true" />
+    <MudTextField Label="Description" @bind-Value="Model.Description" Lines="2" />
+
+    <MudText Typo="Typo.subtitle1">Targets</MudText>
+    @if (Targets.Count == 0)
+    {
+        <MudAlert Severity="Severity.Warning">No targets available. Create a target before creating a campaign.</MudAlert>
+    }
+    else
+    {
+        <MudStack Spacing="1">
+            @foreach (var target in Targets)
+            {
+                <MudCheckBox T="bool"
+                             Value="SelectedTargetIds.Contains(target.Id)"
+                             ValueChanged="(value) => ToggleTarget(target.Id, value)"
+                             Label="@($"{target.DisplayName} ({target.Type})")" />
+            }
+        </MudStack>
+    }
+
+    <MudSwitch T="bool" @bind-Value="Model.RequiresModeration" Color="Color.Primary" Label="Requires moderation" />
+
+    <MudDivider />
+    <MudText Typo="Typo.subtitle1">Text generation</MudText>
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int" Label="Variants per post" @bind-Value="Model.TextVariantsPerPost" Min="1" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="LlmProvider" Label="LLM provider" @bind-Value="Model.TextLlmProvider">
+                @foreach (var provider in Enum.GetValues<LlmProvider>())
+                {
+                    <MudSelectItem Value="@provider">@provider</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudTextField Label="LLM model" @bind-Value="Model.TextLlmModel" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="double" Label="Temperature" @bind-Value="Model.TextLlmTemperature" Step="0.1" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int" Label="Max tokens" @bind-Value="Model.TextLlmMaxTokens" Min="1" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField Label="Prompt" @bind-Value="Model.TextPrompt" Lines="3" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField Label="Editor rules prompt" @bind-Value="Model.TextEditorRulesPrompt" Lines="3" />
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider />
+    <MudText Typo="Typo.subtitle1">Image generation</MudText>
+    <MudGrid>
+        <MudItem xs="12" md="4">
+            <MudNumericField T="int" Label="Variants per post" @bind-Value="Model.ImageVariantsPerPost" Min="1" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudSelect T="ImageProvider" Label="Provider" @bind-Value="Model.ImageProvider">
+                @foreach (var provider in Enum.GetValues<ImageProvider>())
+                {
+                    <MudSelectItem Value="@provider">@provider</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField Label="Positive prompt" @bind-Value="Model.ImagePositivePrompt" Lines="2" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField Label="Negative prompt" @bind-Value="Model.ImageNegativePrompt" Lines="2" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField Label="Options (key=value; ...)" @bind-Value="Model.ImageOptions" Lines="2" />
+        </MudItem>
+    </MudGrid>
+
+    <MudDivider />
+    <MudText Typo="Typo.subtitle1">Schedule</MudText>
+    <MudGrid>
+        <MudItem xs="12" md="6">
+            <MudTextField Label="Cron" @bind-Value="Model.ScheduleCron" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudTextField Label="Timezone" @bind-Value="Model.ScheduleTimezone" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudNumericField T="int" Label="Catch up within minutes" @bind-Value="Model.MissedCatchUpWithinMinutes" Min="0" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudSelect T="MissedPublishPolicy" Label="If missed longer" @bind-Value="Model.MissedIfMissedLongerThanMinutes">
+                @foreach (var policy in Enum.GetValues<MissedPublishPolicy>())
+                {
+                    <MudSelectItem Value="@policy">@policy</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    [Parameter] public CampaignFormModel Model { get; set; } = new();
+    [Parameter] public List<Target> Targets { get; set; } = new();
+    [Parameter] public List<Guid> SelectedTargetIds { get; set; } = new();
+
+    private void ToggleTarget(Guid targetId, bool selected)
+    {
+        if (selected)
+        {
+            if (!SelectedTargetIds.Contains(targetId))
+            {
+                SelectedTargetIds.Add(targetId);
+            }
+        }
+        else
+        {
+            SelectedTargetIds.Remove(targetId);
+        }
+    }
+}

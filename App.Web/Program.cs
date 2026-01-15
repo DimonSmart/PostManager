@@ -3,6 +3,7 @@ using App.Infrastructure.Data;
 using App.Infrastructure.Services;
 using App.Web.Services;
 using Microsoft.EntityFrameworkCore;
+using MudBlazor.Services;
 using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +13,7 @@ builder.Configuration["Storage:DataRoot"] = dataRoot;
 
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
+builder.Services.AddMudServices();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<TenantState>();

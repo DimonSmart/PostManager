@@ -69,4 +69,16 @@ public sealed class TargetService
         target.ErrorMessage = null;
         await _db.SaveChangesAsync(ct);
     }
+
+    public async Task DeleteTargetAsync(string tenantId, Guid targetId, CancellationToken ct)
+    {
+        var target = await GetTargetAsync(tenantId, targetId, ct);
+        if (target == null)
+        {
+            return;
+        }
+
+        _db.Targets.Remove(target);
+        await _db.SaveChangesAsync(ct);
+    }
 }

@@ -1,0 +1,26 @@
+﻿<MudStack Spacing="3">
+    <MudTextField Label="Display name" @bind-Value="Model.DisplayName" Required="true" Immediate="true" />
+    <MudSelect T="TargetType" Label="Type" Value="Model.TargetType" ValueChanged="OnTargetTypeChanged">
+        @foreach (var type in Enum.GetValues<TargetType>())
+        {
+            <MudSelectItem Value="@type">@type</MudSelectItem>
+        }
+    </MudSelect>
+    <MudTextField Label="Settings JSON" @bind-Value="Model.SettingsJson" Lines="6" />
+</MudStack>
+
+@code {
+    [Parameter] public TargetFormModel Model { get; set; } = new();
+
+    private Task OnTargetTypeChanged(TargetType targetType)
+    {
+        Model.TargetType = targetType;
+
+        if (targetType == TargetType.TelegramChannel && string.IsNullOrWhiteSpace(Model.SettingsJson))
+        {
+            Model.SettingsJson = TargetSettingsJsonTemplates.TelegramChannelTemplate;
+        }
+
+        return Task.CompletedTask;
+    }
+}

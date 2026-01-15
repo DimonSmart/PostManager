@@ -152,6 +152,43 @@ public sealed class PublishService
         await _db.SaveChangesAsync(ct);
     }
 
+    public async Task TestTargetAsync(string tenantId, Guid targetId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            throw new ArgumentException("Tenant id is required.", nameof(tenantId));
+        }
+
+        if (targetId == Guid.Empty)
+        {
+            throw new ArgumentException("Target id is required.", nameof(targetId));
+        }
+
+        var target = await _db.Targets.FirstOrDefaultAsync(entry => entry.TenantId == tenantId && entry.Id == targetId, ct);
+        if (target == null)
+        {
+            throw new InvalidOperationException("Target not found.");
+        }
+
+        if (target.Type != TargetType.TelegramChannel)
+        {
+            throw new InvalidOperationException("Test is only supported for Telegram targets.");
+        }
+
+        var text = $"Тестовое сообщение (PostManager) {DateTime.UtcNow:O}";
+        var adapter = ResolveAdapter(target.Type);
+        var request = new PublishRequest(
+            tenantId,
+            target.Id,
+            target.Type,
+            _converter.Convert(text, target.Type),
+            null,
+            target.SettingsJson,
+            null);
+
+        await adapter.PublishAsync(request, ct);
+    }
+
     private string? ResolveSelectedText(Post post)
     {
         if (!string.IsNullOrWhiteSpace(post.UserEditedMarkdown))
