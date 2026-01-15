@@ -1,0 +1,119 @@
+﻿@page "/"
+@using Microsoft.EntityFrameworkCore
+@inject TenantState TenantState
+@inject global::App.Infrastructure.Data.AppDbContext Db
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <div class="alert alert-info">Select or create a tenant to continue.</div>
+}
+else
+{
+    <h1>Dashboard</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Post status</h4>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Status</th>
+                        <th>Count</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var status in StatusCounts.Keys.OrderBy(status => status))
+                    {
+                        <tr>
+                            <td>@status</td>
+                            <td>@StatusCounts[status]</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-6">
+            <h4>Targets</h4>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var target in Targets)
+                    {
+                        <tr>
+                            <td>@target.DisplayName</td>
+                            <td>@target.Type</td>
+                            <td>@(target.HasError ? "Error" : "OK")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <h4>Recent errors</h4>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Post</th>
+                <th>Status</th>
+                <th>Last error</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var post in RecentErrors)
+            {
+                <tr>
+                    <td>@post.Id</td>
+                    <td>@post.Status</td>
+                    <td>@post.LastError</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private Dictionary<PostStatus, int> StatusCounts { get; set; } = new();
+    private List<Target> Targets { get; set; } = new();
+    private List<Post> RecentErrors { get; set; } = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        var tenantId = TenantState.TenantId!;
+
+        var statusGroups = await Db.Posts
+            .Where(post => post.TenantId == tenantId)
+            .GroupBy(post => post.Status)
+            .Select(group => new { Status = group.Key, Count = group.Count() })
+            .ToListAsync();
+
+        StatusCounts = statusGroups.ToDictionary(entry => entry.Status, entry => entry.Count);
+
+        Targets = await Db.Targets
+            .Where(target => target.TenantId == tenantId)
+            .OrderBy(target => target.DisplayName)
+            .ToListAsync();
+
+        RecentErrors = await Db.Posts
+            .Where(post => post.TenantId == tenantId && post.LastError != null)
+            .OrderByDescending(post => post.UpdatedUtc)
+            .Take(5)
+            .ToListAsync();
+    }
+}

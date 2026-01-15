@@ -1,0 +1,332 @@
+﻿@page "/campaigns"
+@inject CampaignService CampaignService
+@inject TargetService TargetService
+@inject TenantState TenantState
+@inject CampaignScheduler CampaignScheduler
+@inject NavigationManager Navigation
+
+<PageTitle>Campaigns</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <div class="alert alert-info">Select a tenant to manage campaigns.</div>
+}
+else
+{
+    <h1>Campaigns</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Existing campaigns</h4>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Moderation</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var campaign in CampaignList)
+                    {
+                        <tr>
+                            <td>@campaign.Name</td>
+                            <td>@(campaign.RequiresModeration ? "Manual" : "Auto")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="async () => await EditCampaign(campaign.Id)">Edit</button>
+                                <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="() => OpenCampaign(campaign)">Open</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-6">
+            <h4>@(IsEditing ? "Edit campaign" : "Create campaign")</h4>
+            <EditForm Model="this" OnValidSubmit="SaveCampaign">
+                <div class="mb-3">
+                    <label class="form-label">Name</label>
+                    <InputText class="form-control" @bind-Value="CampaignName" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <InputTextArea class="form-control" @bind-Value="CampaignDescription" rows="2" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Targets</label>
+                    @foreach (var target in TargetList)
+                    {
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="@target.Id"
+                                   checked="@SelectedTargetIds.Contains(target.Id)"
+                                   @onchange="() => ToggleTarget(target.Id)" />
+                            <label class="form-check-label">@target.DisplayName (@target.Type)</label>
+                        </div>
+                    }
+                </div>
+                <div class="mb-3 form-check">
+                    <input class="form-check-input" type="checkbox" @bind="CampaignRequiresModeration" />
+                    <label class="form-check-label">Requires moderation</label>
+                </div>
+
+                <h5>Text generation</h5>
+                <div class="mb-3">
+                    <label class="form-label">Variants per post</label>
+                    <InputNumber class="form-control" @bind-Value="TextVariantsPerPost" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Prompt</label>
+                    <InputTextArea class="form-control" @bind-Value="TextPrompt" rows="3" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Editor rules prompt</label>
+                    <InputTextArea class="form-control" @bind-Value="TextEditorRulesPrompt" rows="3" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">LLM provider</label>
+                    <InputSelect class="form-select" @bind-Value="TextLlmProvider">
+                        @foreach (var provider in Enum.GetValues<LlmProvider>())
+                        {
+                            <option value="@provider">@provider</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">LLM model</label>
+                    <InputText class="form-control" @bind-Value="TextLlmModel" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Temperature</label>
+                    <InputNumber class="form-control" @bind-Value="TextLlmTemperature" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Max tokens</label>
+                    <InputNumber class="form-control" @bind-Value="TextLlmMaxTokens" />
+                </div>
+
+                <h5>Image generation</h5>
+                <div class="mb-3">
+                    <label class="form-label">Variants per post</label>
+                    <InputNumber class="form-control" @bind-Value="ImageVariantsPerPost" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Provider</label>
+                    <InputSelect class="form-select" @bind-Value="ImageProvider">
+                        @foreach (var provider in Enum.GetValues<ImageProvider>())
+                        {
+                            <option value="@provider">@provider</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Positive prompt</label>
+                    <InputTextArea class="form-control" @bind-Value="ImagePositivePrompt" rows="2" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Negative prompt</label>
+                    <InputTextArea class="form-control" @bind-Value="ImageNegativePrompt" rows="2" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Options (key=value; ...)</label>
+                    <InputTextArea class="form-control" @bind-Value="ImageOptions" rows="2" />
+                </div>
+
+                <h5>Schedule</h5>
+                <div class="mb-3">
+                    <label class="form-label">Cron</label>
+                    <InputText class="form-control" @bind-Value="ScheduleCron" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Timezone</label>
+                    <InputText class="form-control" @bind-Value="ScheduleTimezone" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Catch up within minutes</label>
+                    <InputNumber class="form-control" @bind-Value="MissedCatchUpWithinMinutes" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">If missed longer</label>
+                    <InputSelect class="form-select" @bind-Value="MissedIfMissedLongerThanMinutes">
+                        @foreach (var policy in Enum.GetValues<MissedPublishPolicy>())
+                        {
+                            <option value="@policy">@policy</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <button class="btn btn-success" type="submit">@(IsEditing ? "Save" : "Create")</button>
+                @if (IsEditing)
+                {
+                    <button class="btn btn-secondary ms-2" type="button" @onclick="ClearForm">Cancel</button>
+                }
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private List<Campaign> CampaignList { get; set; } = new();
+    private List<Target> TargetList { get; set; } = new();
+
+    private Guid? EditingCampaignId { get; set; }
+    private string CampaignName { get; set; } = string.Empty;
+    private string? CampaignDescription { get; set; }
+    private bool CampaignRequiresModeration { get; set; } = true;
+    private int TextVariantsPerPost { get; set; } = 1;
+    private string TextPrompt { get; set; } = string.Empty;
+    private string TextEditorRulesPrompt { get; set; } = string.Empty;
+    private LlmProvider TextLlmProvider { get; set; } = LlmProvider.Mock;
+    private string TextLlmModel { get; set; } = "gpt-4o-mini";
+    private double TextLlmTemperature { get; set; } = 0.7;
+    private int TextLlmMaxTokens { get; set; } = 512;
+    private int ImageVariantsPerPost { get; set; } = 1;
+    private ImageProvider ImageProvider { get; set; } = ImageProvider.StableDiffusionLocal;
+    private string ImagePositivePrompt { get; set; } = string.Empty;
+    private string? ImageNegativePrompt { get; set; }
+    private string? ImageOptions { get; set; }
+    private string ScheduleCron { get; set; } = "0 0 10 ? * * *";
+    private string ScheduleTimezone { get; set; } = "UTC";
+    private int MissedCatchUpWithinMinutes { get; set; }
+    private MissedPublishPolicy MissedIfMissedLongerThanMinutes { get; set; } = MissedPublishPolicy.SkipAndNotify;
+    private List<Guid> SelectedTargetIds { get; set; } = new();
+
+    private bool IsEditing => EditingCampaignId.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        CampaignList = await CampaignService.GetCampaignsAsync(TenantState.TenantId!, CancellationToken.None);
+        TargetList = await TargetService.GetTargetsAsync(TenantState.TenantId!, CancellationToken.None);
+    }
+
+    private void ToggleTarget(Guid targetId)
+    {
+        if (SelectedTargetIds.Contains(targetId))
+        {
+            SelectedTargetIds.Remove(targetId);
+        }
+        else
+        {
+            SelectedTargetIds.Add(targetId);
+        }
+    }
+
+    private async Task EditCampaign(Guid campaignId)
+    {
+        var campaign = await CampaignService.GetCampaignAsync(TenantState.TenantId!, campaignId, CancellationToken.None);
+        if (campaign == null)
+        {
+            return;
+        }
+
+        EditingCampaignId = campaign.Id;
+        CampaignName = campaign.Name;
+        CampaignDescription = campaign.Description;
+        CampaignRequiresModeration = campaign.RequiresModeration;
+        TextVariantsPerPost = campaign.TextVariantsPerPost;
+        TextPrompt = campaign.TextPrompt;
+        TextEditorRulesPrompt = campaign.TextEditorRulesPrompt;
+        TextLlmProvider = campaign.TextLlmProvider;
+        TextLlmModel = campaign.TextLlmModel;
+        TextLlmTemperature = campaign.TextLlmTemperature;
+        TextLlmMaxTokens = campaign.TextLlmMaxTokens;
+        ImageVariantsPerPost = campaign.ImageVariantsPerPost;
+        ImageProvider = campaign.ImageProvider;
+        ImagePositivePrompt = campaign.ImagePositivePrompt;
+        ImageNegativePrompt = campaign.ImageNegativePrompt;
+        ImageOptions = campaign.ImageOptions;
+        ScheduleCron = campaign.ScheduleCron;
+        ScheduleTimezone = campaign.ScheduleTimezone;
+        MissedCatchUpWithinMinutes = campaign.MissedCatchUpWithinMinutes;
+        MissedIfMissedLongerThanMinutes = campaign.MissedIfMissedLongerThanMinutes;
+
+        SelectedTargetIds = campaign.CampaignTargets.Select(link => link.TargetId).ToList();
+    }
+
+    private async Task SaveCampaign()
+    {
+        if (string.IsNullOrWhiteSpace(CampaignName))
+        {
+            return;
+        }
+
+        var campaign = new Campaign
+        {
+            Id = EditingCampaignId ?? Guid.Empty,
+            TenantId = TenantState.TenantId!,
+            Name = CampaignName.Trim(),
+            Description = CampaignDescription,
+            RequiresModeration = CampaignRequiresModeration,
+            TextVariantsPerPost = TextVariantsPerPost,
+            TextPrompt = TextPrompt,
+            TextEditorRulesPrompt = TextEditorRulesPrompt,
+            TextLlmProvider = TextLlmProvider,
+            TextLlmModel = TextLlmModel,
+            TextLlmTemperature = TextLlmTemperature,
+            TextLlmMaxTokens = TextLlmMaxTokens,
+            ImageVariantsPerPost = ImageVariantsPerPost,
+            ImageProvider = ImageProvider,
+            ImagePositivePrompt = ImagePositivePrompt,
+            ImageNegativePrompt = ImageNegativePrompt,
+            ImageOptions = ImageOptions,
+            ScheduleCron = ScheduleCron,
+            ScheduleTimezone = ScheduleTimezone,
+            MissedCatchUpWithinMinutes = MissedCatchUpWithinMinutes,
+            MissedIfMissedLongerThanMinutes = MissedIfMissedLongerThanMinutes
+        };
+
+        if (IsEditing)
+        {
+            await CampaignService.UpdateCampaignAsync(TenantState.TenantId!, campaign, SelectedTargetIds, CancellationToken.None);
+        }
+        else
+        {
+            await CampaignService.CreateCampaignAsync(TenantState.TenantId!, campaign, SelectedTargetIds, CancellationToken.None);
+        }
+
+        await CampaignScheduler.ScheduleCampaignAsync(campaign, CancellationToken.None);
+        ClearForm();
+        await LoadData();
+    }
+
+    private void OpenCampaign(Campaign campaign)
+    {
+        Navigation.NavigateTo($"/campaigns/{campaign.Id}");
+    }
+
+    private void ClearForm()
+    {
+        EditingCampaignId = null;
+        CampaignName = string.Empty;
+        CampaignDescription = null;
+        CampaignRequiresModeration = true;
+        TextVariantsPerPost = 1;
+        TextPrompt = string.Empty;
+        TextEditorRulesPrompt = string.Empty;
+        TextLlmProvider = LlmProvider.Mock;
+        TextLlmModel = "gpt-4o-mini";
+        TextLlmTemperature = 0.7;
+        TextLlmMaxTokens = 512;
+        ImageVariantsPerPost = 1;
+        ImageProvider = ImageProvider.StableDiffusionLocal;
+        ImagePositivePrompt = string.Empty;
+        ImageNegativePrompt = null;
+        ImageOptions = null;
+        ScheduleCron = "0 0 10 ? * * *";
+        ScheduleTimezone = "UTC";
+        MissedCatchUpWithinMinutes = 0;
+        MissedIfMissedLongerThanMinutes = MissedPublishPolicy.SkipAndNotify;
+        SelectedTargetIds = new List<Guid>();
+    }
+}

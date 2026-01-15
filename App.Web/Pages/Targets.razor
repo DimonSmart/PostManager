@@ -1,0 +1,143 @@
+﻿@page "/targets"
+@inject TargetService TargetService
+@inject TenantState TenantState
+@inject NavigationManager Navigation
+
+<PageTitle>Targets</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <div class="alert alert-info">Select a tenant to manage targets.</div>
+}
+else
+{
+    <h1>Targets</h1>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Existing targets</h4>
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var target in TargetList)
+                    {
+                        <tr>
+                            <td>@target.DisplayName</td>
+                            <td>@target.Type</td>
+                            <td>@(target.HasError ? "Error" : "OK")</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => EditTarget(target)">Edit</button>
+                                @if (target.HasError)
+                                {
+                                    <button class="btn btn-sm btn-outline-warning ms-2" @onclick="() => ResetError(target)">Reset error</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-6">
+            <h4>@(IsEditing ? "Edit target" : "Create target")</h4>
+            <EditForm Model="this" OnValidSubmit="SaveTarget">
+                <div class="mb-3">
+                    <label class="form-label">Display name</label>
+                    <InputText class="form-control" @bind-Value="TargetDisplayName" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Type</label>
+                    <InputSelect class="form-select" @bind-Value="TargetType">
+                        @foreach (var type in Enum.GetValues<TargetType>())
+                        {
+                            <option value="@type">@type</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Settings JSON</label>
+                    <InputTextArea class="form-control" @bind-Value="TargetSettingsJson" rows="6" />
+                </div>
+                <button class="btn btn-success" type="submit">@(IsEditing ? "Save" : "Create")</button>
+                @if (IsEditing)
+                {
+                    <button class="btn btn-secondary ms-2" type="button" @onclick="ClearForm">Cancel</button>
+                }
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private List<Target> TargetList { get; set; } = new();
+    private Guid? EditingTargetId { get; set; }
+    private string TargetDisplayName { get; set; } = string.Empty;
+    private TargetType TargetType { get; set; } = TargetType.TelegramChannel;
+    private string? TargetSettingsJson { get; set; }
+    private bool IsEditing => EditingTargetId.HasValue;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        await LoadTargets();
+    }
+
+    private async Task LoadTargets()
+    {
+        TargetList = await TargetService.GetTargetsAsync(TenantState.TenantId!, CancellationToken.None);
+    }
+
+    private void EditTarget(Target target)
+    {
+        EditingTargetId = target.Id;
+        TargetDisplayName = target.DisplayName;
+        TargetType = target.Type;
+        TargetSettingsJson = target.SettingsJson;
+    }
+
+    private async Task SaveTarget()
+    {
+        if (string.IsNullOrWhiteSpace(TargetDisplayName))
+        {
+            return;
+        }
+
+        if (EditingTargetId.HasValue)
+        {
+            await TargetService.UpdateTargetAsync(TenantState.TenantId!, EditingTargetId.Value, TargetType, TargetDisplayName, TargetSettingsJson, CancellationToken.None);
+        }
+        else
+        {
+            await TargetService.AddTargetAsync(TenantState.TenantId!, TargetType, TargetDisplayName, TargetSettingsJson, CancellationToken.None);
+        }
+
+        ClearForm();
+        await LoadTargets();
+    }
+
+    private async Task ResetError(Target target)
+    {
+        await TargetService.ResetErrorAsync(TenantState.TenantId!, target.Id, CancellationToken.None);
+        await LoadTargets();
+    }
+
+    private void ClearForm()
+    {
+        EditingTargetId = null;
+        TargetDisplayName = string.Empty;
+        TargetType = TargetType.TelegramChannel;
+        TargetSettingsJson = null;
+    }
+}

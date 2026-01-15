@@ -1,0 +1,181 @@
+﻿@page "/posts/{PostId:guid}"
+@using Markdig
+@inject PostService PostService
+@inject TenantState TenantState
+@inject NavigationManager Navigation
+
+<PageTitle>Post</PageTitle>
+
+@if (!IsTenantSelected)
+{
+    <div class="alert alert-info">Select a tenant to view posts.</div>
+}
+else if (Post == null)
+{
+    <div class="alert alert-warning">Post not found.</div>
+}
+else
+{
+    <h1>Post @Post.Id</h1>
+    <p>Status: <strong>@Post.Status</strong></p>
+
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Text variants</h4>
+            @foreach (var variant in Post.Variants)
+            {
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="textVariant" value="@variant.Id"
+                                   checked="@(SelectedTextVariantId == variant.Id)"
+                                   @onchange="() => SelectedTextVariantId = variant.Id" />
+                            <label class="form-check-label">Variant @variant.Id</label>
+                        </div>
+                        <pre class="small mt-2">@variant.MarkdownText</pre>
+                        @if (!string.IsNullOrWhiteSpace(variant.EditorNotes))
+                        {
+                            <div class="alert alert-secondary small">@variant.EditorNotes</div>
+                        }
+                    </div>
+                </div>
+            }
+            <button class="btn btn-outline-primary" @onclick="SaveSelection" disabled="@IsPublished">Save selection</button>
+        </div>
+        <div class="col-md-6">
+            <h4>Image variants</h4>
+            @foreach (var variant in Post.ImageVariants)
+            {
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="imageVariant" value="@variant.Id"
+                                   checked="@(SelectedImageVariantId == variant.Id)"
+                                   @onchange="() => SelectedImageVariantId = variant.Id" />
+                            <label class="form-check-label">Image @variant.Id</label>
+                        </div>
+                        <div class="small">@variant.ImageUri</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <hr />
+    <h4>Markdown editor</h4>
+    <div class="row">
+        <div class="col-md-6">
+            <InputTextArea class="form-control" @bind-Value="UserMarkdown" rows="10" />
+            <button class="btn btn-outline-primary mt-2" @onclick="SaveMarkdown" disabled="@IsPublished">Save markdown</button>
+        </div>
+        <div class="col-md-6">
+            <div class="border p-2">
+                @((MarkupString)Markdown.ToHtml(UserMarkdown ?? string.Empty))
+            </div>
+        </div>
+    </div>
+
+    <hr />
+    <div class="mb-3">
+        <button class="btn btn-success" @onclick="Approve" disabled="@IsPublished">Approve</button>
+        <button class="btn btn-secondary ms-2" @onclick="Schedule" disabled="@IsPublished">Schedule</button>
+        <button class="btn btn-primary ms-2" @onclick="PublishNow" disabled="@IsPublished">Publish now</button>
+        <button class="btn btn-danger ms-2" @onclick="Cancel" disabled="@IsPublished">Cancel</button>
+    </div>
+
+    <h4>Publishing status</h4>
+    <div class="mb-2">Rollup: <strong>@Post.PublishRollupStatus</strong></div>
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in Post.ChannelPublishes)
+            {
+                <tr>
+                    <td>@entry.TargetId</td>
+                    <td>@entry.Status</td>
+                    <td>@entry.ErrorMessage</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (!string.IsNullOrWhiteSpace(Post.PublicationLog))
+    {
+        <h5>Publication log</h5>
+        <pre class="small">@Post.PublicationLog</pre>
+    }
+}
+
+@code {
+    [Parameter] public Guid PostId { get; set; }
+
+    private bool IsTenantSelected => !string.IsNullOrWhiteSpace(TenantState.TenantId);
+    private Post? Post { get; set; }
+    private Guid? SelectedTextVariantId { get; set; }
+    private Guid? SelectedImageVariantId { get; set; }
+    private string? UserMarkdown { get; set; }
+    private bool IsPublished => Post?.Status == PostStatus.Published;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsTenantSelected)
+        {
+            Navigation.NavigateTo("/tenants");
+            return;
+        }
+
+        await LoadPost();
+    }
+
+    private async Task LoadPost()
+    {
+        Post = await PostService.GetPostAsync(TenantState.TenantId!, PostId, CancellationToken.None);
+        if (Post != null)
+        {
+            SelectedTextVariantId = Post.SelectedTextVariantId;
+            SelectedImageVariantId = Post.SelectedImageVariantId;
+            UserMarkdown = Post.UserEditedMarkdown ?? Post.Variants.FirstOrDefault()?.MarkdownText;
+        }
+    }
+
+    private async Task SaveSelection()
+    {
+        await PostService.UpdateSelectionAsync(TenantState.TenantId!, PostId, SelectedTextVariantId, SelectedImageVariantId, CancellationToken.None);
+        await LoadPost();
+    }
+
+    private async Task SaveMarkdown()
+    {
+        await PostService.UpdateMarkdownAsync(TenantState.TenantId!, PostId, UserMarkdown ?? string.Empty, CancellationToken.None);
+        await LoadPost();
+    }
+
+    private async Task Approve()
+    {
+        await PostService.ApproveAsync(TenantState.TenantId!, PostId, CancellationToken.None);
+        await LoadPost();
+    }
+
+    private async Task Schedule()
+    {
+        await PostService.ScheduleAsync(TenantState.TenantId!, PostId, CancellationToken.None, publishIfDue: false);
+        await LoadPost();
+    }
+
+    private async Task PublishNow()
+    {
+        await PostService.PublishNowAsync(TenantState.TenantId!, PostId, CancellationToken.None);
+        await LoadPost();
+    }
+
+    private async Task Cancel()
+    {
+        await PostService.CancelAsync(TenantState.TenantId!, PostId, CancellationToken.None);
+        await LoadPost();
+    }
+}

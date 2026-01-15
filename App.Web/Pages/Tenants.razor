@@ -1,0 +1,115 @@
+﻿@page "/tenants"
+@inject TenantService TenantService
+@inject TenantState TenantState
+
+<PageTitle>Tenants</PageTitle>
+
+<h1>Tenants</h1>
+
+<div class="row">
+    <div class="col-md-6">
+        <h4>Existing tenants</h4>
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Id</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var tenant in TenantList)
+                {
+                    <tr>
+                        <td>@tenant.Name</td>
+                        <td>@tenant.Id</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" @onclick="() => SelectTenant(tenant)">Select</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="col-md-6">
+        <h4>Create tenant</h4>
+        <EditForm Model="this" OnValidSubmit="CreateTenant">
+            <div class="mb-3">
+                <label class="form-label">Name</label>
+                <InputText class="form-control" @bind-Value="NewTenantName" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Settings JSON (optional)</label>
+                <InputTextArea class="form-control" @bind-Value="NewTenantSettingsJson" rows="4" />
+                <div class="form-text">Store env var names for secrets here.</div>
+            </div>
+            <button class="btn btn-success" type="submit">Create</button>
+        </EditForm>
+
+        @if (SelectedTenant != null)
+        {
+            <hr />
+            <h5>Edit settings for @SelectedTenant.Name</h5>
+            <EditForm Model="this" OnValidSubmit="SaveSettings">
+                <InputTextArea class="form-control" @bind-Value="SelectedTenantSettingsJson" rows="6" />
+                <button class="btn btn-primary mt-2" type="submit">Save settings</button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Tenant> TenantList { get; set; } = new();
+    private string NewTenantName { get; set; } = string.Empty;
+    private string? NewTenantSettingsJson { get; set; }
+    private Tenant? SelectedTenant { get; set; }
+    private string? SelectedTenantSettingsJson { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTenants();
+
+        if (!string.IsNullOrWhiteSpace(TenantState.TenantId))
+        {
+            SelectedTenant = TenantList.FirstOrDefault(tenant => tenant.Id == TenantState.TenantId);
+            SelectedTenantSettingsJson = SelectedTenant?.SettingsJson;
+        }
+    }
+
+    private async Task LoadTenants()
+    {
+        TenantList = await TenantService.GetTenantsAsync(CancellationToken.None);
+    }
+
+    private void SelectTenant(Tenant tenant)
+    {
+        TenantState.SetTenant(tenant.Id, tenant.Name);
+        SelectedTenant = tenant;
+        SelectedTenantSettingsJson = tenant.SettingsJson;
+    }
+
+    private async Task CreateTenant()
+    {
+        if (string.IsNullOrWhiteSpace(NewTenantName))
+        {
+            return;
+        }
+
+        var tenant = await TenantService.CreateTenantAsync(NewTenantName, NewTenantSettingsJson, CancellationToken.None);
+        TenantState.SetTenant(tenant.Id, tenant.Name);
+        NewTenantName = string.Empty;
+        NewTenantSettingsJson = null;
+        await LoadTenants();
+    }
+
+    private async Task SaveSettings()
+    {
+        if (SelectedTenant == null)
+        {
+            return;
+        }
+
+        await TenantService.UpdateSettingsAsync(SelectedTenant.Id, SelectedTenantSettingsJson, CancellationToken.None);
+        await LoadTenants();
+    }
+}
